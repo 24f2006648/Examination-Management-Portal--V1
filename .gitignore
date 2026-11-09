@@ -1,0 +1,16 @@
+# Virtual environment
+venv/
+.venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Database (created by code on first run)
+*.db
+instance/
+
+# Editor and system files
+.vscode/
+.DS_Store
+Thumbs.db

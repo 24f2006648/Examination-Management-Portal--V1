@@ -1,0 +1,33 @@
+
+{% extends "base.html" %}
+
+{% block title %}Examiner Registration{% endblock %}
+
+{% block content %}
+
+<h2>Examiner Registration</h2>
+
+<form method="POST">
+
+    <label>Full Name</label>
+    <input type="text" name="name" class="form-control" required>
+
+    <label>Email</label>
+    <input type="email" name="email" class="form-control" required>
+
+    <label>Password</label>
+    <input type="password" name="password" class="form-control" required>
+
+    <label>Department</label>
+    <input type="text" name="department" class="form-control" required>
+
+    <label>Contact</label>
+    <input type="text" name="contact" class="form-control" required>
+
+    <button type="submit" class="btn btn-primary mt-3">
+        Register
+    </button>
+
+</form>
+
+{% endblock %}

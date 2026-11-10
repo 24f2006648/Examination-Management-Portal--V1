@@ -1,0 +1,47 @@
+
+{% extends "base.html" %}
+
+{% block title %}Manage Examiners{% endblock %}
+
+{% block content %}
+
+<h2>Pending Examiner Approvals</h2>
+
+{% if examiners %}
+
+<table class="table table-bordered">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>Email</th>
+            <th>Department</th>
+            <th>Contact</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for examiner in examiners %}
+        <tr>
+            <td>{{ examiner.user.full_name }}</td>
+            <td>{{ examiner.user.email }}</td>
+            <td>{{ examiner.department }}</td>
+            <td>{{ examiner.contact }}</td>
+            <td>
+                <form method="POST"
+                      action="{{ url_for('approve_examiner', examiner_id=examiner.id) }}">
+                    <button type="submit" class="btn btn-success">
+                        Approve
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+
+{% else %}
+<p>No pending examiners.</p>
+{% endif %}
+
+{% endblock %}

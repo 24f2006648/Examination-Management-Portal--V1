@@ -178,3 +178,40 @@ class Evaluation(db.Model):
     marks = db.Column(db.Float, nullable=False)
     remarks = db.Column(db.Text)
     status = db.Column(db.String(20), default="Pending", nullable=False)          
+
+
+
+class ExaminerAssignment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    examiner_id = db.Column(
+        db.Integer,
+        db.ForeignKey("examiner.id"),
+        nullable=False
+    )
+
+    exam_id = db.Column(
+        db.Integer,
+        db.ForeignKey("examination.id"),
+        nullable=False
+    )
+
+    # Relationship with Examiner
+    examiner = db.relationship(
+        "Examiner",
+        backref="assignments"
+    )
+
+    # Relationship with Examination
+    exam = db.relationship(
+        "Examination",
+        backref="examiner_assignments"
+    )
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "examiner_id",
+            "exam_id",
+            name="unique_examiner_assignment"
+        ),
+    )

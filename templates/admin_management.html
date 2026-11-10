@@ -295,4 +295,94 @@
     </tbody>
 </table>
 
+
+<hr>
+
+<h3>Assign Examinations to Examiners</h3>
+
+<form method="POST" class="card p-3 mb-4">
+
+    <input type="hidden" name="action" value="assign_examiner">
+
+    <div class="mb-3">
+        <label class="form-label">Select Approved Examiner</label>
+
+        <select name="examiner_id" class="form-select" required>
+            <option value="">Select Examiner</option>
+
+            {% for examiner in examiners %}
+                {% if examiner.status == "approved" %}
+                    <option value="{{ examiner.id }}">
+                        {{ examiner.user.full_name }}
+                    </option>
+                {% endif %}
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label class="form-label">Select Examination</label>
+
+        <select name="exam_id" class="form-select" required>
+            <option value="">Select Examination</option>
+
+            {% for exam in exams %}
+                <option value="{{ exam.id }}">
+                    {{ exam.name }}
+                </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+        Assign Examination
+    </button>
+
+</form>
+
+<h4>Existing Examiner Assignments</h4>
+
+<table class="table table-bordered table-striped">
+
+    <thead>
+        <tr>
+            <th>Examiner</th>
+            <th>Examination</th>
+            <th>Action</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for assignment in assignments %}
+        <tr>
+            <td>{{ assignment.examiner.user.full_name }}</td>
+            <td>{{ assignment.exam.name }}</td>
+
+            <td>
+                <form method="POST">
+                    <input type="hidden"
+                           name="action"
+                           value="remove_assignment">
+
+                    <input type="hidden"
+                           name="assignment_id"
+                           value="{{ assignment.id }}">
+
+                    <button type="submit"
+                            class="btn btn-danger btn-sm">
+                        Remove
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="3">No examiner assignments found.</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+
+</table>
+
+
 {% endblock %}

@@ -1,9 +1,93 @@
+
 {% extends "base.html" %}
 
 {% block title %}Examiner Dashboard{% endblock %}
 
 {% block content %}
+
 <h2>Examiner Dashboard</h2>
-<p>Welcome, Examiner!</p>
-<a href="{{ url_for('logout') }}">Logout</a>
+
+<h5>Welcome, {{ examiner.user.full_name }}</h5>
+
+<hr>
+
+<h3>Dashboard Statistics</h3>
+
+<div class="row">
+
+    <div class="col-md-3 mb-3">
+        <div class="card p-3 shadow-sm">
+            <h6>Assigned Exams</h6>
+            <h3>{{ stats.assigned_exams }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card p-3 shadow-sm">
+            <h6>Total Slots</h6>
+            <h3>{{ stats.total_slots }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card p-3 shadow-sm">
+            <h6>Available Slots</h6>
+            <h3>{{ stats.available_slots }}</h3>
+        </div>
+    </div>
+
+    <div class="col-md-3 mb-3">
+        <div class="card p-3 shadow-sm">
+            <h6>Active Bookings</h6>
+            <h3>{{ stats.total_bookings }}</h3>
+        </div>
+    </div>
+
+</div>
+
+<hr>
+
+<h3>My Assigned Examinations</h3>
+
+{% if assignments %}
+
+<table class="table table-bordered table-striped">
+
+    <thead>
+        <tr>
+            <th>Examination</th>
+            <th>Course</th>
+            <th>Type</th>
+            <th>Duration</th>
+            <th>Maximum Marks</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for assignment in assignments %}
+        <tr>
+            <td>{{ assignment.exam.name }}</td>
+            <td>{{ assignment.exam.course.name }}</td>
+            <td>{{ assignment.exam.exam_type }}</td>
+            <td>{{ assignment.exam.duration }} minutes</td>
+            <td>{{ assignment.exam.max_marks }}</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+
+</table>
+
+{% else %}
+
+<p>No examinations have been assigned to you yet.</p>
+
+{% endif %}
+
+<hr>
+
+<a href="{{ url_for('manage_examiner_slots') }}"
+   class="btn btn-primary">
+    Manage Examination Slots
+</a>
+
 {% endblock %}

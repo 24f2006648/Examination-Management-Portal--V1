@@ -2,10 +2,9 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_sqlalchemy import SQLAlchemy
 from extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
-from models import (
-    User, Student, Examiner, Course, Examination,
-    ExaminationRubric, ExaminationSlot, Booking
-)
+from models import *
+    
+
 from datetime import datetime
 
 app = Flask(__name__)
@@ -160,13 +159,15 @@ def admin_dashboard():
 
     return render_template("admin_dashboard.html", stats=stats)
 
+
 @app.route("/examiner/dashboard")
 def examiner_dashboard():
+
     if "user_id" not in session or session.get("role") != "examiner":
         return redirect(url_for("login"))
 
     examiner = Examiner.query.filter_by(
-    user_id=session["user_id"]
+        user_id=session["user_id"]
     ).first()
 
     if not examiner or examiner.status != "approved":
@@ -174,7 +175,36 @@ def examiner_dashboard():
         flash("Your examiner account is not active.")
         return redirect(url_for("login"))
 
-    return render_template("examiner_dashboard.html")
+    assignments = ExaminerAssignment.query.filter_by(
+        examiner_id=examiner.id
+    ).all()
+
+    assigned_slots = ExaminationSlot.query.filter_by(
+        examiner_id=examiner.id
+    ).all()
+
+    stats = {
+        "assigned_exams": len(assignments),
+        "total_slots": len(assigned_slots),
+        "available_slots": ExaminationSlot.query.filter_by(
+            examiner_id=examiner.id,
+            status="Available"
+        ).count(),
+        "total_bookings": Booking.query.join(
+            ExaminationSlot
+        ).filter(
+            ExaminationSlot.examiner_id == examiner.id,
+            Booking.status == "Booked"
+        ).count()
+    }
+
+    return render_template(
+        "examiner_dashboard.html",
+        examiner=examiner,
+        assignments=assignments,
+        assigned_slots=assigned_slots,
+        stats=stats
+    )
 
 
 @app.route("/student/dashboard")
@@ -479,11 +509,70 @@ def admin_management():
                 db.session.commit()
                 flash("Booking rescheduled successfully.")
 
+        
+        # ASSIGN EXAMINATION TO EXAMINER
+        elif action == "assign_examiner":
+            examiner = db.get_or_404(
+                Examiner,
+                int(request.form["examiner_id"])
+            )
+
+            exam = db.get_or_404(
+                Examination,
+                int(request.form["exam_id"])
+            )
+
+            existing = ExaminerAssignment.query.filter_by(
+                examiner_id=examiner.id,
+                exam_id=exam.id
+            ).first()
+
+            if examiner.status != "approved":
+                flash("Only approved examiners can be assigned.")
+
+            elif existing:
+                flash("This examination is already assigned to this examiner.")
+
+            else:
+                assignment = ExaminerAssignment(
+                    examiner_id=examiner.id,
+                    exam_id=exam.id
+                )
+
+                db.session.add(assignment)
+                db.session.commit()
+
+                flash("Examination assigned successfully.")
+
+        # REMOVE EXAMINER ASSIGNMENT
+        elif action == "remove_assignment":
+            assignment = db.get_or_404(
+                ExaminerAssignment,
+                int(request.form["assignment_id"])
+            )
+
+            # Do not remove an assignment if the examiner has slots
+            existing_slots = ExaminationSlot.query.filter_by(
+                examiner_id=assignment.examiner_id,
+                exam_id=assignment.exam_id
+            ).first()
+
+            if existing_slots:
+                flash("Cannot remove assignment while examination slots exist.")
+            else:
+                db.session.delete(assignment)
+                db.session.commit()
+
+                flash("Examiner assignment removed.")
+
+
+
         return redirect(url_for("admin_management"))
 
     exams = Examination.query.all()
     rubrics = ExaminationRubric.query.all()
     examiners = Examiner.query.all()
+    assignments = ExaminerAssignment.query.all()
     slots = ExaminationSlot.query.all()
     bookings = Booking.query.all()
 
@@ -493,9 +582,232 @@ def admin_management():
         rubrics=rubrics,
         examiners=examiners,
         slots=slots,
-        bookings=bookings
+        bookings=bookings,
+        assignments=assignments
     )     
-    
+
+
+@app.route("/examiner/slots", methods=["GET", "POST"])
+def manage_examiner_slots():
+
+    if "user_id" not in session or session.get("role") != "examiner":
+        return redirect(url_for("login"))
+
+    examiner = Examiner.query.filter_by(
+        user_id=session["user_id"]
+    ).first()
+
+    if not examiner or examiner.status != "approved":
+        session.clear()
+        flash("Your examiner account is not active.")
+        return redirect(url_for("login"))
+
+    def booking_has_started(exam):
+        now = datetime.now()
+
+        return (
+            exam.booking_open
+            or (
+                exam.booking_start is not None
+                and now >= exam.booking_start
+            )
+        )
+
+    def slot_creation_allowed(exam):
+        now = datetime.now()
+
+        return (
+            exam.slot_creation_open
+            and exam.slot_creation_start is not None
+            and exam.slot_creation_end is not None
+            and exam.slot_creation_start <= now <= exam.slot_creation_end
+        )
+
+    def get_slot_values():
+        slot_date = datetime.strptime(
+            request.form["date"], "%Y-%m-%d"
+        ).date()
+
+        start_time = datetime.strptime(
+            request.form["start_time"], "%H:%M"
+        ).time()
+
+        end_time = datetime.strptime(
+            request.form["end_time"], "%H:%M"
+        ).time()
+
+        capacity = int(request.form["capacity"])
+
+        if end_time <= start_time:
+            raise ValueError("End time must be later than start time.")
+
+        if capacity <= 0:
+            raise ValueError("Capacity must be greater than zero.")
+
+        if datetime.combine(slot_date, start_time) <= datetime.now():
+            raise ValueError("Slot must be scheduled in the future.")
+
+        return slot_date, start_time, end_time, capacity
+
+    if request.method == "POST":
+
+        action = request.form.get("action")
+
+        # CREATE SLOT
+        if action == "add":
+
+            exam = db.get_or_404(
+                Examination,
+                int(request.form["exam_id"])
+            )
+
+            assignment = ExaminerAssignment.query.filter_by(
+                examiner_id=examiner.id,
+                exam_id=exam.id
+            ).first()
+
+            if not assignment:
+                flash("You are not assigned to this examination.")
+
+            elif not slot_creation_allowed(exam):
+                flash("Slot creation is currently closed or outside the allowed timeline.")
+
+            else:
+                try:
+                    slot_date, start_time, end_time, capacity = get_slot_values()
+
+                    overlapping_slot = ExaminationSlot.query.filter(
+                        ExaminationSlot.examiner_id == examiner.id,
+                        ExaminationSlot.date == slot_date,
+                        ExaminationSlot.start_time < end_time,
+                        ExaminationSlot.end_time > start_time
+                    ).first()
+
+                    if overlapping_slot:
+                        flash("You already have an overlapping slot at this time.")
+
+                    else:
+                        slot = ExaminationSlot(
+                            exam_id=exam.id,
+                            examiner_id=examiner.id,
+                            date=slot_date,
+                            start_time=start_time,
+                            end_time=end_time,
+                            capacity=capacity,
+                            available_seats=capacity,
+                            status="Available"
+                        )
+
+                        db.session.add(slot)
+                        db.session.commit()
+
+                        flash("Examination slot created successfully.")
+
+                except ValueError as error:
+                    flash(str(error))
+
+        # EDIT SLOT
+        elif action == "edit":
+
+            slot = db.get_or_404(
+                ExaminationSlot,
+                int(request.form["slot_id"])
+            )
+
+            exam = slot.examination
+
+            if slot.examiner_id != examiner.id:
+                flash("You cannot edit another examiner's slot.")
+
+            elif booking_has_started(exam):
+                flash("Slots cannot be edited after booking begins.")
+
+            elif slot.bookings:
+                flash("Slots with existing bookings cannot be edited.")
+
+            else:
+                try:
+                    slot_date, start_time, end_time, capacity = get_slot_values()
+
+                    overlapping_slot = ExaminationSlot.query.filter(
+                        ExaminationSlot.examiner_id == examiner.id,
+                        ExaminationSlot.date == slot_date,
+                        ExaminationSlot.start_time < end_time,
+                        ExaminationSlot.end_time > start_time,
+                        ExaminationSlot.id != slot.id
+                    ).first()
+
+                    if overlapping_slot:
+                        flash("You already have an overlapping slot at this time.")
+
+                    else:
+                        slot.date = slot_date
+                        slot.start_time = start_time
+                        slot.end_time = end_time
+                        slot.capacity = capacity
+                        slot.available_seats = capacity
+                        slot.status = "Available"
+
+                        db.session.commit()
+
+                        flash("Examination slot updated successfully.")
+
+                except ValueError as error:
+                    flash(str(error))
+
+        # DELETE SLOT
+        elif action == "delete":
+
+            slot = db.get_or_404(
+                ExaminationSlot,
+                int(request.form["slot_id"])
+            )
+
+            if slot.examiner_id != examiner.id:
+                flash("You cannot delete another examiner's slot.")
+
+            elif booking_has_started(slot.examination):
+                flash("Slots cannot be deleted after booking begins.")
+
+            elif slot.bookings:
+                flash("Slots with existing bookings cannot be deleted.")
+
+            else:
+                db.session.delete(slot)
+                db.session.commit()
+
+                flash("Examination slot deleted successfully.")
+
+        return redirect(url_for("manage_examiner_slots"))
+
+    assignments = ExaminerAssignment.query.filter_by(
+        examiner_id=examiner.id
+    ).all()
+
+    slots = ExaminationSlot.query.filter_by(
+        examiner_id=examiner.id
+    ).all()
+
+    edit_id = request.args.get("edit_id", type=int)
+
+    edit_slot = None
+
+    if edit_id:
+        edit_slot = db.session.get(ExaminationSlot, edit_id)
+
+        if edit_slot and edit_slot.examiner_id != examiner.id:
+            edit_slot = None
+            flash("You cannot edit another examiner's slot.")
+
+    return render_template(
+        "examiner_slots.html",
+        examiner=examiner,
+        assignments=assignments,
+        slots=slots,
+        edit_slot=edit_slot
+    )
+
+
 if __name__ == "__main__":
     with app.app_context():
         from models import *

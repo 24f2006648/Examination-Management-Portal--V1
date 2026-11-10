@@ -4,7 +4,7 @@ from extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import *
     
-
+import math
 from datetime import datetime
 
 app = Flask(__name__)
@@ -160,6 +160,7 @@ def admin_dashboard():
     return render_template("admin_dashboard.html", stats=stats)
 
 
+
 @app.route("/examiner/dashboard")
 def examiner_dashboard():
 
@@ -185,12 +186,22 @@ def examiner_dashboard():
 
     stats = {
         "assigned_exams": len(assignments),
+
         "total_slots": len(assigned_slots),
+
         "available_slots": ExaminationSlot.query.filter_by(
             examiner_id=examiner.id,
             status="Available"
         ).count(),
+
         "total_bookings": Booking.query.join(
+            ExaminationSlot
+        ).filter(
+            ExaminationSlot.examiner_id == examiner.id,
+            Booking.status.in_(["Booked", "Completed"])
+        ).count(),
+
+        "pending_evaluations": Booking.query.join(
             ExaminationSlot
         ).filter(
             ExaminationSlot.examiner_id == examiner.id,
@@ -198,12 +209,23 @@ def examiner_dashboard():
         ).count()
     }
 
+    booked_students = Booking.query.join(
+        ExaminationSlot
+    ).filter(
+        ExaminationSlot.examiner_id == examiner.id,
+        Booking.status.in_(["Booked", "Completed"])
+    ).order_by(
+        ExaminationSlot.date,
+        ExaminationSlot.start_time
+    ).all()
+
     return render_template(
         "examiner_dashboard.html",
         examiner=examiner,
         assignments=assignments,
         assigned_slots=assigned_slots,
-        stats=stats
+        stats=stats,
+        booked_students=booked_students
     )
 
 
@@ -577,11 +599,24 @@ def admin_management():
         # DELETE RUBRIC
         elif action == "delete_rubric":
             rubric = db.get_or_404(
-                ExaminationRubric, int(request.form["rubric_id"])
+                ExaminationRubric,
+                int(request.form["rubric_id"])
             )
-            db.session.delete(rubric)
-            db.session.commit()
-            flash("Rubric deleted successfully.")
+
+            # Check whether this rubric has already been used
+            existing_details = EvaluationDetail.query.filter_by(
+                rubric_id=rubric.id
+            ).first()
+
+            if existing_details:
+                flash(
+                    "Cannot delete this rubric because it is already used "
+                    "in an evaluation."
+                )
+            else:
+                db.session.delete(rubric)
+                db.session.commit()
+                flash("Rubric deleted successfully.")
 
         # ACTIVATE / DEACTIVATE EXAMINER
         elif action in ["activate_examiner", "deactivate_examiner"]:
@@ -753,16 +788,22 @@ def admin_management():
     slots = ExaminationSlot.query.all()
     bookings = Booking.query.all()
 
-    return render_template(
-        "admin_management.html",
-        exams=exams,
-        rubrics=rubrics,
-        examiners=examiners,
-        slots=slots,
-        bookings=bookings,
-        assignments=assignments
-    )     
+    evaluations = Evaluation.query.order_by(
+        Evaluation.id.desc()
+    ).all()
 
+    
+
+    return render_template(
+    "admin_management.html",
+    exams=exams,
+    rubrics=rubrics,
+    examiners=examiners,
+    slots=slots,
+    bookings=bookings,
+    assignments=assignments,
+    evaluations=evaluations
+)
 
 @app.route("/examiner/slots", methods=["GET", "POST"])
 def manage_examiner_slots():
@@ -983,6 +1024,150 @@ def manage_examiner_slots():
         slots=slots,
         edit_slot=edit_slot
     )
+
+
+@app.route("/examiner/evaluate/<int:booking_id>", methods=["GET", "POST"])
+def evaluate_student(booking_id):
+
+    if "user_id" not in session or session.get("role") != "examiner":
+        return redirect(url_for("login"))
+
+    examiner = Examiner.query.filter_by(
+        user_id=session["user_id"]
+    ).first()
+
+    if not examiner or examiner.status != "approved":
+        session.clear()
+        flash("Your examiner account is not active.")
+        return redirect(url_for("login"))
+
+    booking = db.get_or_404(Booking, booking_id)
+
+    # Verify that the booking belongs to this examiner
+    if booking.slot.examiner_id != examiner.id:
+        flash("You cannot evaluate a student assigned to another examiner.")
+        return redirect(url_for("examiner_dashboard"))
+
+    if booking.status not in ["Booked", "Completed"]:
+        flash("This booking cannot be evaluated.")
+        return redirect(url_for("examiner_dashboard"))
+
+    exam = booking.slot.examination
+
+    rubrics = ExaminationRubric.query.filter_by(
+        exam_id=exam.id
+    ).all()
+
+    if not rubrics:
+        flash("No evaluation rubrics have been configured.")
+        return redirect(url_for("examiner_dashboard"))
+
+    evaluation = Evaluation.query.filter_by(
+        booking_id=booking.id
+    ).first()
+
+    if request.method == "POST":
+
+        try:
+            total_marks = 0
+            rubric_marks = []
+
+            for rubric in rubrics:
+
+                submitted_marks = request.form.get(
+                    f"mark_{rubric.id}"
+                )
+
+                if submitted_marks is None or submitted_marks.strip() == "":
+                    raise ValueError(
+                        f"Enter marks for {rubric.criterion_name}."
+                    )
+
+                marks = float(submitted_marks)
+                if not math.isfinite(marks):
+                    raise ValueError("Marks must be a valid finite number.")
+
+                if not 0 <= marks <= rubric.max_marks:
+                    raise ValueError(
+                        f"Marks for {rubric.criterion_name} must be between 0 and {rubric.max_marks}."
+                    )
+
+                total_marks += marks
+                rubric_marks.append((rubric, marks))
+
+            if total_marks > exam.max_marks:
+                raise ValueError(
+                    f"Total marks cannot exceed {exam.max_marks}."
+                )
+
+            remarks = request.form.get("remarks", "").strip()
+
+            if not evaluation:
+
+                evaluation = Evaluation(
+                    booking_id=booking.id,
+                    examiner_id=examiner.id,
+                    marks=total_marks,
+                    remarks=remarks,
+                    status="Published"
+                )
+
+                db.session.add(evaluation)
+                db.session.flush()
+
+            else:
+
+                evaluation.marks = total_marks
+                evaluation.remarks = remarks
+                evaluation.examiner_id = examiner.id
+                evaluation.status = "Published"
+
+                EvaluationDetail.query.filter_by(
+                    evaluation_id=evaluation.id
+                ).delete()
+
+            for rubric, marks in rubric_marks:
+
+                detail = EvaluationDetail(
+                    evaluation_id=evaluation.id,
+                    rubric_id=rubric.id,
+                    marks_awarded=marks
+                )
+
+                db.session.add(detail)
+
+            booking.status = "Completed"
+
+            db.session.commit()
+
+            flash("Evaluation submitted and result published successfully.")
+            return redirect(url_for("examiner_dashboard"))
+
+        except (ValueError, TypeError):
+            db.session.rollback()
+            flash("Invalid marks entered. Please check all rubric marks.")
+
+    # Reload evaluation after possible rollback
+    evaluation = Evaluation.query.filter_by(
+        booking_id=booking.id
+    ).first()
+
+    existing_marks = {}
+
+    if evaluation:
+        for detail in evaluation.details:
+            existing_marks[detail.rubric_id] = detail.marks_awarded
+
+    return render_template(
+        "examiner_evaluations.html",
+        examiner=examiner,
+        booking=booking,
+        exam=exam,
+        rubrics=rubrics,
+        evaluation=evaluation,
+        existing_marks=existing_marks
+    )
+
 
 
 if __name__ == "__main__":

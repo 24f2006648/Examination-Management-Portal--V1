@@ -215,3 +215,27 @@ class ExaminerAssignment(db.Model):
             name="unique_examiner_assignment"
         ),
     )
+
+class EvaluationDetail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+
+    evaluation_id = db.Column(
+        db.Integer,
+        db.ForeignKey("evaluation.id"),
+        nullable=False
+    )
+
+    rubric_id = db.Column(
+        db.Integer,
+        db.ForeignKey("examination_rubric.id"),
+        nullable=False
+    )
+
+    marks_awarded = db.Column(db.Float, nullable=False)
+
+    evaluation = db.relationship(
+        "Evaluation",
+        backref="details"
+    )
+
+    rubric = db.relationship("ExaminationRubric")

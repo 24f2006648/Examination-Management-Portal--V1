@@ -207,12 +207,189 @@ def examiner_dashboard():
     )
 
 
-@app.route("/student/dashboard")
+@app.route("/student/dashboard", methods=["GET", "POST"])
 def student_dashboard():
     if "user_id" not in session or session.get("role") != "student":
         return redirect(url_for("login"))
 
-    return render_template("student_dashboard.html")
+    student = Student.query.filter_by(
+        user_id=session["user_id"]
+    ).first()
+
+    if not student:
+        session.clear()
+        flash("Student profile not found.")
+        return redirect(url_for("login"))
+
+    def booking_allowed(exam):
+        now = datetime.now()
+
+        return (
+            exam.booking_open
+            and exam.booking_start is not None
+            and exam.booking_end is not None
+            and exam.booking_start <= now <= exam.booking_end
+        )
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        # BOOK AN EXAMINATION SLOT
+        if action == "book":
+            slot = db.get_or_404(
+                ExaminationSlot,
+                int(request.form["slot_id"])
+            )
+
+            exam = slot.examination
+
+            existing_booking = Booking.query.join(
+                ExaminationSlot
+            ).filter(
+                Booking.student_id == student.id,
+                ExaminationSlot.exam_id == exam.id,
+                Booking.status == "Booked"
+            ).first()
+
+            if existing_booking:
+                flash("You already have an active booking for this examination.")
+
+            elif not booking_allowed(exam):
+                flash("Booking is closed or outside the allowed timeline.")
+
+            elif slot.status != "Available" or slot.available_seats <= 0:
+                flash("This slot is full or unavailable.")
+
+            elif datetime.combine(slot.date, slot.start_time) <= datetime.now():
+                flash("You cannot book a slot that has already started.")
+
+            else:
+                booking = Booking(
+                    student_id=student.id,
+                    slot_id=slot.id,
+                    status="Booked"
+                )
+
+                slot.available_seats -= 1
+
+                if slot.available_seats == 0:
+                    slot.status = "Full"
+
+                db.session.add(booking)
+                db.session.commit()
+
+                flash("Examination slot booked successfully.")
+
+        # CANCEL AN EXISTING BOOKING
+        elif action == "cancel":
+            booking = db.get_or_404(
+                Booking,
+                int(request.form["booking_id"])
+            )
+
+            if booking.student_id != student.id:
+                flash("You cannot cancel another student's booking.")
+
+            elif booking.status != "Booked":
+                flash("This booking is not active.")
+
+            elif (
+                booking.slot.examination.booking_end is None
+                or datetime.now() > booking.slot.examination.booking_end
+            ):
+                flash("The cancellation deadline has passed.")
+
+            else:
+                slot = booking.slot
+
+                booking.status = "Cancelled"
+                slot.available_seats += 1
+
+                if slot.available_seats > slot.capacity:
+                    slot.available_seats = slot.capacity
+
+                if slot.available_seats > 0:
+                    slot.status = "Available"
+
+                db.session.commit()
+
+                flash("Booking cancelled successfully.")
+
+        return redirect(url_for("student_dashboard"))
+
+    # SEARCH AND FILTER EXAMINATIONS
+    search = request.args.get("search", "").strip()
+    selected_type = request.args.get("exam_type", "")
+    selected_course = request.args.get("course_id", type=int)
+
+    exam_query = Examination.query.join(Course)
+
+    if search:
+        search_text = f"%{search}%"
+        exam_query = exam_query.filter(
+            (Examination.name.ilike(search_text))
+            | (Course.name.ilike(search_text))
+            | (Course.code.ilike(search_text))
+        )
+
+    if selected_type:
+        exam_query = exam_query.filter(
+            Examination.exam_type == selected_type
+        )
+
+    if selected_course:
+        exam_query = exam_query.filter(
+            Examination.course_id == selected_course
+        )
+
+    examinations = exam_query.order_by(
+        Examination.id.desc()
+    ).all()
+
+    # SHOW ONLY FUTURE SLOTS IN THE EXAMINATION LIST
+    for exam in examinations:
+        exam.available_slots = [
+            slot for slot in exam.slots
+            if slot.status == "Available"
+            and slot.available_seats > 0
+            and datetime.combine(
+                slot.date, slot.start_time
+            ) > datetime.now()
+        ]
+
+    courses = Course.query.filter_by(status="active").all()
+    exam_types = db.session.query(
+        Examination.exam_type
+    ).distinct().all()
+
+    # ALL BOOKINGS BELONGING TO THIS STUDENT
+    student_bookings = Booking.query.filter_by(
+        student_id=student.id
+    ).order_by(
+        Booking.booking_date.desc()
+    ).all()
+
+    upcoming_bookings = [
+        booking for booking in student_bookings
+        if booking.status == "Booked"
+        and datetime.combine(
+            booking.slot.date,
+            booking.slot.start_time
+        ) > datetime.now()
+    ]
+
+    return render_template(
+        "student_dashboard.html",
+        student=student,
+        examinations=examinations,
+        courses=courses,
+        exam_types=exam_types,
+        student_bookings=student_bookings,
+        upcoming_bookings=upcoming_bookings,
+        search=search,
+        selected_type=selected_type,
+        selected_course=selected_course
+    )
 
 @app.route("/logout")
 def logout():

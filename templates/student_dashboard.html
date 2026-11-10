@@ -1,9 +1,372 @@
+
 {% extends "base.html" %}
 
 {% block title %}Student Dashboard{% endblock %}
 
 {% block content %}
-<h2>Student Dashboard</h2>
-<p>Welcome, Student!</p>
-<a href="{{ url_for('logout') }}">Logout</a>
+
+<div class="container mt-4">
+
+    <!-- STUDENT WELCOME -->
+    <h2>Student Dashboard</h2>
+    <p>Welcome, {{ student.user.full_name }}!</p>
+
+    <hr>
+
+    <!-- SEARCH AND FILTER -->
+    <h4>Find Examinations</h4>
+
+    <form method="GET"
+          action="{{ url_for('student_dashboard') }}"
+          class="row g-3 mb-4">
+
+        <!-- Search by examination or course -->
+        <div class="col-md-4">
+            <input type="text"
+                   name="search"
+                   class="form-control"
+                   placeholder="Search examination or course"
+                   value="{{ search }}">
+        </div>
+
+        <!-- Dynamic examination type filter -->
+        <div class="col-md-3">
+            <select name="exam_type" class="form-select">
+
+                <option value="">All Examination Types</option>
+
+                {% for item in exam_types %}
+                    <option value="{{ item[0] }}"
+                        {% if selected_type == item[0] %}selected{% endif %}>
+                        {{ item[0] }}
+                    </option>
+                {% endfor %}
+
+            </select>
+        </div>
+
+        <!-- Course filter -->
+        <div class="col-md-3">
+            <select name="course_id" class="form-select">
+
+                <option value="">All Courses</option>
+
+                {% for course in courses %}
+                    <option value="{{ course.id }}"
+                        {% if selected_course == course.id %}selected{% endif %}>
+                        {{ course.code }} - {{ course.name }}
+                    </option>
+                {% endfor %}
+
+            </select>
+        </div>
+
+        <!-- Search button -->
+        <div class="col-md-2">
+            <button type="submit" class="btn btn-primary w-100">
+                Search
+            </button>
+        </div>
+
+    </form>
+
+    <!-- EXAMINATION LIST -->
+    <h4>Available Examinations</h4>
+
+    {% for exam in examinations %}
+
+        <div class="card mb-4">
+
+            <div class="card-body">
+
+                <h5>{{ exam.name }}</h5>
+
+                <p>
+                    <strong>Course:</strong>
+                    {{ exam.course.code }} - {{ exam.course.name }}
+                    <br>
+
+                    <strong>Type:</strong>
+                    {{ exam.exam_type }}
+                    <br>
+
+                    <strong>Duration:</strong>
+                    {{ exam.duration }} minutes
+                    <br>
+
+                    <strong>Maximum Marks:</strong>
+                    {{ exam.max_marks }}
+                </p>
+
+                <hr>
+
+                <h6>Available Slots</h6>
+
+                {% if exam.available_slots %}
+
+                    <div class="table-responsive">
+
+                        <table class="table table-bordered table-striped">
+
+                            <thead>
+                                <tr>
+                                    <th>Date</th>
+                                    <th>Time</th>
+                                    <th>Examiner</th>
+                                    <th>Available Seats</th>
+                                    <th>Action</th>
+                                </tr>
+                            </thead>
+
+                            <tbody>
+
+                                {% for slot in exam.available_slots %}
+
+                                    <tr>
+
+                                        <td>
+                                            {{ slot.date.strftime("%d-%m-%Y") }}
+                                        </td>
+
+                                        <td>
+                                            {{ slot.start_time.strftime("%I:%M %p") }}
+                                            -
+                                            {{ slot.end_time.strftime("%I:%M %p") }}
+                                        </td>
+
+                                        <td>
+                                            {{ slot.examiner.user.full_name }}
+                                        </td>
+
+                                        <td>
+                                            {{ slot.available_seats }}
+                                        </td>
+
+                                        <td>
+
+                                            <form method="POST"
+                                                  action="{{ url_for('student_dashboard') }}">
+
+                                                <input type="hidden"
+                                                       name="action"
+                                                       value="book">
+
+                                                <input type="hidden"
+                                                       name="slot_id"
+                                                       value="{{ slot.id }}">
+
+                                                <button type="submit"
+                                                        class="btn btn-success btn-sm">
+                                                    Book Slot
+                                                </button>
+
+                                            </form>
+
+                                        </td>
+
+                                    </tr>
+
+                                {% endfor %}
+
+                            </tbody>
+
+                        </table>
+
+                    </div>
+
+                {% else %}
+
+                    <p class="text-muted">
+                        No available future slots for this examination.
+                    </p>
+
+                {% endif %}
+
+            </div>
+
+        </div>
+
+    {% else %}
+
+        <p class="text-muted">
+            No examinations found.
+        </p>
+
+    {% endfor %}
+
+    <hr>
+
+    <!-- UPCOMING BOOKINGS -->
+    <h4>Upcoming Bookings</h4>
+
+    {% if upcoming_bookings %}
+
+        <div class="table-responsive">
+
+            <table class="table table-striped table-bordered">
+
+                <thead>
+                    <tr>
+                        <th>Examination</th>
+                        <th>Course</th>
+                        <th>Date</th>
+                        <th>Time</th>
+                        <th>Examiner</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for booking in upcoming_bookings %}
+
+                        <tr>
+
+                            <td>
+                                {{ booking.slot.examination.name }}
+                            </td>
+
+                            <td>
+                                {{ booking.slot.examination.course.code }}
+                            </td>
+
+                            <td>
+                                {{ booking.slot.date.strftime("%d-%m-%Y") }}
+                            </td>
+
+                            <td>
+                                {{ booking.slot.start_time.strftime("%I:%M %p") }}
+                            </td>
+
+                            <td>
+                                {{ booking.slot.examiner.user.full_name }}
+                            </td>
+
+                            <td>
+                                <span class="badge bg-success">
+                                    {{ booking.status }}
+                                </span>
+                            </td>
+
+                            <td>
+
+                                <form method="POST"
+                                      action="{{ url_for('student_dashboard') }}">
+
+                                    <input type="hidden"
+                                           name="action"
+                                           value="cancel">
+
+                                    <input type="hidden"
+                                           name="booking_id"
+                                           value="{{ booking.id }}">
+
+                                    <button type="submit"
+                                            class="btn btn-danger btn-sm">
+                                        Cancel
+                                    </button>
+
+                                </form>
+
+                            </td>
+
+                        </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    {% else %}
+
+        <p class="text-muted">
+            You have no upcoming bookings.
+        </p>
+
+    {% endif %}
+
+    <hr>
+
+    <!-- BOOKING RECORDS -->
+    <h4>My Booking Records</h4>
+
+    {% if student_bookings %}
+
+        <div class="table-responsive">
+
+            <table class="table table-bordered table-striped">
+
+                <thead>
+                    <tr>
+                        <th>Examination</th>
+                        <th>Slot Date</th>
+                        <th>Booking Date</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+
+                    {% for booking in student_bookings %}
+
+                        <tr>
+
+                            <td>
+                                {{ booking.slot.examination.name }}
+                            </td>
+
+                            <td>
+                                {{ booking.slot.date.strftime("%d-%m-%Y") }}
+                            </td>
+
+                            <td>
+                                {{ booking.booking_date }}
+                            </td>
+
+                            <td>
+                                {% if booking.status == "Booked" %}
+                                    <span class="badge bg-success">
+                                        {{ booking.status }}
+                                    </span>
+                                {% elif booking.status == "Cancelled" %}
+                                    <span class="badge bg-danger">
+                                        {{ booking.status }}
+                                    </span>
+                                {% else %}
+                                    <span class="badge bg-secondary">
+                                        {{ booking.status }}
+                                    </span>
+                                {% endif %}
+                            </td>
+
+                        </tr>
+
+                    {% endfor %}
+
+                </tbody>
+
+            </table>
+
+        </div>
+
+    {% else %}
+
+        <p class="text-muted">
+            You have not made any bookings yet.
+        </p>
+
+    {% endif %}
+
+    <!-- LOGOUT -->
+    <a href="{{ url_for('logout') }}"
+       class="btn btn-secondary mt-3 mb-4">
+        Logout
+    </a>
+
+</div>
+
 {% endblock %}

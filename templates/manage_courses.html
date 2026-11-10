@@ -1,0 +1,109 @@
+
+{% extends "base.html" %}
+
+{% block title %}Manage Courses{% endblock %}
+
+{% block content %}
+
+<h2>Course Management</h2>
+
+<h3>Add New Course</h3>
+
+<form method="POST">
+    <input type="hidden" name="action" value="add">
+
+    <div class="mb-3">
+        <label>Course Name</label>
+        <input type="text" name="name" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Course Code</label>
+        <input type="text" name="code" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Description</label>
+        <textarea name="description" class="form-control"></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Add Course</button>
+</form>
+
+<hr>
+
+{% if edit_course %}
+<h3>Edit Course</h3>
+
+<form method="POST">
+    <input type="hidden" name="action" value="edit">
+    <input type="hidden" name="course_id" value="{{ edit_course.id }}">
+
+    <div class="mb-3">
+        <label>Course Name</label>
+        <input type="text" name="name" class="form-control"
+               value="{{ edit_course.name }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Course Code</label>
+        <input type="text" name="code" class="form-control"
+               value="{{ edit_course.code }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Description</label>
+        <textarea name="description" class="form-control">{{ edit_course.description or "" }}</textarea>
+    </div>
+
+    <button type="submit" class="btn btn-success">Save Changes</button>
+    <a href="{{ url_for('manage_courses') }}" class="btn btn-secondary">Cancel</a>
+</form>
+
+<hr>
+{% endif %}
+
+<h3>Existing Courses</h3>
+
+{% if courses %}
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Course Name</th>
+            <th>Course Code</th>
+            <th>Description</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for course in courses %}
+        <tr>
+            <td>{{ course.id }}</td>
+            <td>{{ course.name }}</td>
+            <td>{{ course.code }}</td>
+            <td>{{ course.description or "-" }}</td>
+
+            <td>
+                <a href="{{ url_for('manage_courses', edit_id=course.id) }}"
+                   class="btn btn-warning btn-sm">Edit</a>
+
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="course_id" value="{{ course.id }}">
+
+                    <button type="submit" class="btn btn-danger btn-sm">
+                        Delete
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No courses available.</p>
+{% endif %}
+
+{% endblock %}

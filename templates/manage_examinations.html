@@ -1,0 +1,163 @@
+
+{% extends "base.html" %}
+
+{% block title %}Manage Examinations{% endblock %}
+
+{% block content %}
+
+<h2>Examination Management</h2>
+
+<h3>Add New Examination</h3>
+
+{% if courses %}
+<form method="POST">
+    <input type="hidden" name="action" value="add">
+
+    <div class="mb-3">
+        <label>Course</label>
+        <select name="course_id" class="form-control" required>
+            {% for course in courses %}
+            <option value="{{ course.id }}">
+                {{ course.code }} - {{ course.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label>Examination Name</label>
+        <input type="text" name="name" class="form-control" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Examination Type</label>
+        <select name="exam_type" class="form-control" required>
+            <option value="Quiz 1">Quiz 1</option>
+            <option value="Quiz 2">Quiz 2</option>
+            <option value="End Semester">End Semester</option>
+            <option value="OPPE">OPPE</option>
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label>Duration (minutes)</label>
+        <input type="number" name="duration" class="form-control"
+               min="1" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Maximum Marks</label>
+        <input type="number" name="max_marks" class="form-control"
+               min="1" required>
+    </div>
+
+    <button type="submit" class="btn btn-primary">
+        Add Examination
+    </button>
+</form>
+{% else %}
+<p>Please add an active course before creating an examination.</p>
+{% endif %}
+
+<hr>
+
+{% if edit_exam %}
+<h3>Edit Examination</h3>
+
+<form method="POST">
+    <input type="hidden" name="action" value="edit">
+    <input type="hidden" name="exam_id" value="{{ edit_exam.id }}">
+
+    <div class="mb-3">
+        <label>Course</label>
+        <select name="course_id" class="form-control" required>
+            {% for course in courses %}
+            <option value="{{ course.id }}"
+                {% if course.id == edit_exam.course_id %}selected{% endif %}>
+                {{ course.code }} - {{ course.name }}
+            </option>
+            {% endfor %}
+        </select>
+    </div>
+
+    <div class="mb-3">
+        <label>Examination Name</label>
+        <input type="text" name="name" class="form-control"
+               value="{{ edit_exam.name }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Examination Type</label>
+        <input type="text" name="exam_type" class="form-control"
+               value="{{ edit_exam.exam_type }}" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Duration (minutes)</label>
+        <input type="number" name="duration" class="form-control"
+               value="{{ edit_exam.duration }}" min="1" required>
+    </div>
+
+    <div class="mb-3">
+        <label>Maximum Marks</label>
+        <input type="number" name="max_marks" class="form-control"
+               value="{{ edit_exam.max_marks }}" min="1" required>
+    </div>
+
+    <button type="submit" class="btn btn-success">Save Changes</button>
+    <a href="{{ url_for('manage_examinations') }}"
+       class="btn btn-secondary">Cancel</a>
+</form>
+
+<hr>
+{% endif %}
+
+<h3>Existing Examinations</h3>
+
+{% if examinations %}
+<table class="table table-bordered table-striped">
+    <thead>
+        <tr>
+            <th>ID</th>
+            <th>Course</th>
+            <th>Examination</th>
+            <th>Type</th>
+            <th>Duration</th>
+            <th>Maximum Marks</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+
+    <tbody>
+        {% for exam in examinations %}
+        <tr>
+            <td>{{ exam.id }}</td>
+            <td>{{ exam.course.code }}</td>
+            <td>{{ exam.name }}</td>
+            <td>{{ exam.exam_type }}</td>
+            <td>{{ exam.duration }} min</td>
+            <td>{{ exam.max_marks }}</td>
+            <td>{{ exam.status }}</td>
+            <td>
+                <a href="{{ url_for('manage_examinations', edit_id=exam.id) }}"
+                   class="btn btn-warning btn-sm">Edit</a>
+
+                <form method="POST" class="d-inline">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="exam_id" value="{{ exam.id }}">
+
+                    <button type="submit" class="btn btn-danger btn-sm">
+                        Delete
+                    </button>
+                </form>
+            </td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% else %}
+<p>No examinations available.</p>
+{% endif %}
+
+{% endblock %}

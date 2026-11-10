@@ -8,5 +8,39 @@
 <a href="{{ url_for('manage_examiners') }}" class="btn btn-primary">
     Manage Examiners
 </a>
+
+<a href="{{ url_for('manage_courses') }}" class="btn btn-primary">
+    Manage Courses
+</a>
+
+<a href="{{ url_for('manage_examinations') }}" class="btn btn-primary">
+    Manage Examinations
+</a>
+
+<h2>Admin Dashboard Overview</h2>
+
+<div class="row">
+    {% for label, value in stats.items() %}
+    <div class="col-md-3 mb-3">
+        <div class="card p-3">
+            <h6>{{ label.replace("_", " ").title() }}</h6>
+            <h3>{{ value }}</h3>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<hr>
+
+<a href="{{ url_for('admin_management') }}"
+   class="btn btn-primary">
+    Advanced Admin Management
+</a>
+
+<a href="{{ url_for('admin_management') }}"
+   class="btn btn-primary">
+    Manage Rubrics, Timelines, Slots and Bookings
+</a>
+
 <a href="{{ url_for('logout') }}">Logout</a>
 {% endblock %}

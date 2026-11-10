@@ -2,6 +2,11 @@ from flask import Flask, render_template, request, redirect, url_for, session, f
 from flask_sqlalchemy import SQLAlchemy
 from extensions import db
 from werkzeug.security import generate_password_hash, check_password_hash
+from models import (
+    User, Student, Examiner, Course, Examination,
+    ExaminationRubric, ExaminationSlot, Booking
+)
+from datetime import datetime
 
 app = Flask(__name__)
 app.config["SECRET_KEY"] = "emp-development-secret-key"
@@ -143,12 +148,30 @@ def admin_dashboard():
     if "user_id" not in session or session.get("role") != "admin":
         return redirect(url_for("login"))
 
-    return render_template("admin_dashboard.html")
+    stats = {
+        "students": Student.query.count(),
+        "examiners": Examiner.query.filter_by(status="approved").count(),
+        "pending_examiners": Examiner.query.filter_by(status="pending").count(),
+        "courses": Course.query.count(),
+        "examinations": Examination.query.count(),
+        "slots": ExaminationSlot.query.count(),
+        "bookings": Booking.query.filter_by(status="Booked").count()
+    }
 
+    return render_template("admin_dashboard.html", stats=stats)
 
 @app.route("/examiner/dashboard")
 def examiner_dashboard():
     if "user_id" not in session or session.get("role") != "examiner":
+        return redirect(url_for("login"))
+
+    examiner = Examiner.query.filter_by(
+    user_id=session["user_id"]
+    ).first()
+
+    if not examiner or examiner.status != "approved":
+        session.clear()
+        flash("Your examiner account is not active.")
         return redirect(url_for("login"))
 
     return render_template("examiner_dashboard.html")
@@ -195,6 +218,284 @@ def approve_examiner(examiner_id):
     flash("Examiner approved successfully.")
     return redirect(url_for("manage_examiners"))
 
+@app.route("/admin/courses", methods=["GET", "POST"])
+def manage_courses():
+    if "user_id" not in session or session.get("role") != "admin":
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        action = request.form["action"]
+
+        if action == "add":
+            course = Course(
+                name=request.form["name"],
+                code=request.form["code"],
+                description=request.form["description"]
+            )
+
+            if Course.query.filter_by(code=course.code).first():
+                flash("Course code already exists.")
+            else:
+                db.session.add(course)
+                db.session.commit()
+                flash("Course added successfully.")
+
+        elif action == "edit":
+            course = db.get_or_404(Course, request.form["course_id"])
+
+            existing = Course.query.filter(
+                Course.code == request.form["code"],
+                Course.id != course.id
+            ).first()
+
+            if existing:
+                flash("Course code already exists.")
+            else:
+                course.name = request.form["name"]
+                course.code = request.form["code"]
+                course.description = request.form["description"]
+                db.session.commit()
+                flash("Course updated successfully.")
+
+        elif action == "delete":
+            course = db.get_or_404(Course, request.form["course_id"])
+
+            if course.examinations:
+                flash("Cannot delete a course with examinations.")
+            else:
+                db.session.delete(course)
+                db.session.commit()
+                flash("Course deleted successfully.")
+
+        return redirect(url_for("manage_courses"))
+
+    courses = Course.query.all()
+
+    edit_id = request.args.get("edit_id", type=int)
+    edit_course = db.session.get(Course, edit_id) if edit_id else None
+
+    return render_template(
+        "manage_courses.html",
+        courses=courses,
+        edit_course=edit_course
+    )
+
+@app.route("/admin/examinations", methods=["GET", "POST"])
+def manage_examinations():
+    if "user_id" not in session or session.get("role") != "admin":
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        action = request.form["action"]
+
+        # ADD EXAMINATION
+        if action == "add":
+            exam = Examination(
+                course_id=int(request.form["course_id"]),
+                name=request.form["name"],
+                exam_type=request.form["exam_type"],
+                duration=int(request.form["duration"]),
+                max_marks=int(request.form["max_marks"]),
+                status="Draft"
+            )
+
+            db.session.add(exam)
+            db.session.commit()
+            flash("Examination added successfully.")
+
+        # EDIT EXAMINATION
+        elif action == "edit":
+            exam = db.get_or_404(
+                Examination, int(request.form["exam_id"])
+            )
+
+            exam.course_id = int(request.form["course_id"])
+            exam.name = request.form["name"]
+            exam.exam_type = request.form["exam_type"]
+            exam.duration = int(request.form["duration"])
+            exam.max_marks = int(request.form["max_marks"])
+
+            db.session.commit()
+            flash("Examination updated successfully.")
+
+        # DELETE EXAMINATION
+        elif action == "delete":
+            exam = db.get_or_404(
+                Examination, int(request.form["exam_id"])
+            )
+
+            if exam.slots or exam.rubrics:
+                flash("Cannot delete an examination with existing slots or rubrics.")
+            else:
+                db.session.delete(exam)
+                db.session.commit()
+                flash("Examination deleted successfully.")
+
+        return redirect(url_for("manage_examinations"))
+
+    courses = Course.query.filter_by(status="active").all()
+    examinations = Examination.query.all()
+
+    edit_id = request.args.get("edit_id", type=int)
+    edit_exam = db.session.get(Examination, edit_id) if edit_id else None
+
+    return render_template(
+        "manage_examinations.html",
+        courses=courses,
+        examinations=examinations,
+        edit_exam=edit_exam
+    ) 
+
+@app.route("/admin/management", methods=["GET", "POST"])
+def admin_management():
+    if "user_id" not in session or session.get("role") != "admin":
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        # ADD RUBRIC
+        if action == "add_rubric":
+            rubric = ExaminationRubric(
+                exam_id=int(request.form["exam_id"]),
+                criterion_name=request.form["criterion_name"],
+                max_marks=int(request.form["max_marks"]),
+                weightage=float(request.form["weightage"]),
+                description=request.form.get("description")
+            )
+            db.session.add(rubric)
+            db.session.commit()
+            flash("Rubric added successfully.")
+
+        # DELETE RUBRIC
+        elif action == "delete_rubric":
+            rubric = db.get_or_404(
+                ExaminationRubric, int(request.form["rubric_id"])
+            )
+            db.session.delete(rubric)
+            db.session.commit()
+            flash("Rubric deleted successfully.")
+
+        # ACTIVATE / DEACTIVATE EXAMINER
+        elif action in ["activate_examiner", "deactivate_examiner"]:
+            examiner = db.get_or_404(
+                Examiner, int(request.form["examiner_id"])
+            )
+            examiner.status = (
+                "approved" if action == "activate_examiner" else "inactive"
+            )
+            db.session.commit()
+            flash("Examiner status updated.")
+
+        # UPDATE EXAMINATION TIMELINES
+        elif action == "update_timeline":
+            exam = db.get_or_404(
+                Examination, int(request.form["exam_id"])
+            )
+
+            def parse_datetime(value):
+                return datetime.strptime(value, "%Y-%m-%dT%H:%M") if value else None
+
+            exam.slot_creation_start = parse_datetime(
+                request.form.get("slot_creation_start")
+            )
+            exam.slot_creation_end = parse_datetime(
+                request.form.get("slot_creation_end")
+            )
+            exam.booking_start = parse_datetime(
+                request.form.get("booking_start")
+            )
+            exam.booking_end = parse_datetime(
+                request.form.get("booking_end")
+            )
+
+            db.session.commit()
+            flash("Examination timelines updated.")
+
+        # OPEN / CLOSE SLOT CREATION
+        elif action == "toggle_slots":
+            exam = db.get_or_404(
+                Examination, int(request.form["exam_id"])
+            )
+            exam.slot_creation_open = not exam.slot_creation_open
+            db.session.commit()
+            flash("Slot creation setting updated.")
+
+        # OPEN / CLOSE STUDENT BOOKING
+        elif action == "toggle_booking":
+            exam = db.get_or_404(
+                Examination, int(request.form["exam_id"])
+            )
+            exam.booking_open = not exam.booking_open
+            db.session.commit()
+            flash("Booking setting updated.")
+
+        # CHANGE EXAMINER FOR A SLOT
+        elif action == "change_examiner":
+            slot = db.get_or_404(
+                ExaminationSlot, int(request.form["slot_id"])
+            )
+            examiner = db.get_or_404(
+                Examiner, int(request.form["examiner_id"])
+            )
+
+            if examiner.status != "approved":
+                flash("Only approved examiners can be assigned.")
+            else:
+                slot.examiner_id = examiner.id
+                db.session.commit()
+                flash("Slot examiner changed successfully.")
+
+        # RESCHEDULE A BOOKING
+        elif action == "reschedule_booking":
+            booking = db.get_or_404(
+                Booking, int(request.form["booking_id"])
+            )
+            new_slot = db.get_or_404(
+                ExaminationSlot, int(request.form["new_slot_id"])
+            )
+            old_slot = booking.slot
+
+            if booking.status != "Booked":
+                flash("Only active bookings can be rescheduled.")
+            elif new_slot.exam_id != old_slot.exam_id:
+                flash("Select a slot belonging to the same examination.")
+            elif new_slot.status != "Available" or new_slot.available_seats <= 0:
+                flash("The selected slot is not available.")
+            else:
+                old_slot.available_seats += 1
+                if old_slot.available_seats > old_slot.capacity:
+                    old_slot.available_seats = old_slot.capacity
+
+                new_slot.available_seats -= 1
+                if new_slot.available_seats == 0:
+                    new_slot.status = "Full"
+
+                booking.slot_id = new_slot.id
+
+                if old_slot.available_seats > 0:
+                    old_slot.status = "Available"
+
+                db.session.commit()
+                flash("Booking rescheduled successfully.")
+
+        return redirect(url_for("admin_management"))
+
+    exams = Examination.query.all()
+    rubrics = ExaminationRubric.query.all()
+    examiners = Examiner.query.all()
+    slots = ExaminationSlot.query.all()
+    bookings = Booking.query.all()
+
+    return render_template(
+        "admin_management.html",
+        exams=exams,
+        rubrics=rubrics,
+        examiners=examiners,
+        slots=slots,
+        bookings=bookings
+    )     
+    
 if __name__ == "__main__":
     with app.app_context():
         from models import *

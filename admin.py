@@ -8,8 +8,8 @@ with app.app_context():
     db.create_all()
 
     existing_admin = User.query.filter_by(role="admin").first()
-    print(existing_admin.full_name, existing_admin.email, existing_admin.role)
-    if existing_admin :
+    if existing_admin:
+        print(existing_admin.full_name, existing_admin.email, existing_admin.role)
         print("Admin already exists.")
 
     else:

@@ -41,6 +41,7 @@ class Course(db.Model):
     examinations = db.relationship("Examination", backref="course", lazy=True)
 
 
+
 class Examination(db.Model):
     id = db.Column(db.Integer, primary_key=True)
 
@@ -61,9 +62,25 @@ class Examination(db.Model):
     booking_start = db.Column(db.DateTime)
     booking_end = db.Column(db.DateTime)
 
-    status = db.Column(db.String(30), default="Draft", nullable=False)    
-    rubrics = db.relationship("ExaminationRubric", backref="examination", lazy=True)
-    slots = db.relationship("ExaminationSlot", backref="examination", lazy=True)
+    slot_creation_open = db.Column(
+        db.Boolean, default=False, nullable=False
+    )
+
+    booking_open = db.Column(
+        db.Boolean, default=False, nullable=False
+    )
+
+    status = db.Column(
+        db.String(30), default="Draft", nullable=False
+    )
+
+    rubrics = db.relationship(
+        "ExaminationRubric", backref="examination", lazy=True
+    )
+
+    slots = db.relationship(
+        "ExaminationSlot", backref="examination", lazy=True
+    )
 
 
 
